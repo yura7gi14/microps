@@ -110,12 +110,7 @@ net_device_add_iface(struct net_device *dev, struct net_iface *iface)
 struct net_iface *
 net_device_get_iface(struct net_device *dev, int family)
 {
-    /*デバイスに紐づくインタフェースを検索
-    ・デバイスのインタフェースリスト(dev->ifaces)を巡回
-    　・familyが一致するインタフェースを返す
-    ・合致するインタフェースを発券できなかったらNULLを返す
-    */
-   struct net_iface *entry;
+    struct net_iface *entry;
 
     for (entry = dev->ifaces; entry; entry = entry->next) {
         if (entry->family == family) {
@@ -151,14 +146,14 @@ net_protocol_register(uint16_t type, void (*handler)(const uint8_t *data, size_t
 {
     struct net_protocol *proto;
 
-    for(proto = protocols; proto; proto = proto->next){
-        if(type == proto->type){
+    for (proto = protocols; proto; proto = proto->next) {
+        if (type == proto->type) {
             errorf("already registered, type=0x%04x", type);
             return -1;
         }
     }
     proto = memory_alloc(sizeof(*proto));
-    if(!proto){
+    if (!proto) {
         errorf("memory_alloc() failure");
         return -1;
     }
@@ -176,30 +171,28 @@ net_input_handler(uint16_t type, const uint8_t *data, size_t len, struct net_dev
     struct net_protocol *proto;
     struct net_protocol_queue_entry *entry;
 
-    for(proto = protocols; proto; proto = proto->next){
-        if(proto->type == type){
-            /*プロトコルの受信キューにエントリを挿入*/
+    for (proto = protocols; proto; proto = proto->next) {
+        if (proto->type == type) {
             entry = memory_alloc(sizeof(*entry) + len);
-            if(!entry){
+            if (!entry) {
                 errorf("memory_alloc() failure");
                 return -1;
             }
             entry->dev = dev;
             entry->len = len;
             memcpy(entry->data, data, len);
-            if(!queue_push(&proto->queue, entry)){
+            if (!queue_push(&proto->queue, entry)) {
                 errorf("queue_push() failure");
                 memory_free(entry);
                 return -1;
             }
-
             debugf("queue pushed (num:%u), dev=%s, type=0x%04x, len=%zu", proto->queue.num, dev->name, type, len);
             debugdump(data, len);
             intr_raise_irq(INTR_IRQ_SOFTIRQ);
             return 0;
         }
-    }   
-    /*unsupported protocol*/
+    }
+    /* unsupported protocol */
     return 0;
 }
 
@@ -209,10 +202,10 @@ net_softirq_handler(void)
     struct net_protocol *proto;
     struct net_protocol_queue_entry *entry;
 
-    for(proto = protocols; proto; proto = proto->next){
-        while(1){
+    for (proto = protocols; proto; proto = proto->next) {
+        while (1) {
             entry = queue_pop(&proto->queue);
-            if(!entry){
+            if (!entry) {
                 break;
             }
             debugf("queue popped (num:%u), dev=%s, type=0x%04x, len=%zu", proto->queue.num, entry->dev->name, proto->type, entry->len);
@@ -223,7 +216,6 @@ net_softirq_handler(void)
     }
     return 0;
 }
-
 
 int
 net_run(void)
@@ -255,6 +247,10 @@ net_shutdown(void)
     debugf("shutting down");
 }
 
+#include "arp.h"
+#include "ip.h"
+#include "icmp.h"
+
 int
 net_init(void)
 {
@@ -262,8 +258,7 @@ net_init(void)
         errorf("intr_init() failure");
         return -1;
     }
-    /*ARPの初期化関数を呼び出す*/
-    if(arp_init() == -1){
+    if (arp_init() == -1) {
         errorf("arp_init() failure");
         return -1;
     }
@@ -271,9 +266,7 @@ net_init(void)
         errorf("ip_init() failure");
         return -1;
     }
-
-    /*ICMPの初期化関数を呼び出す(プロトコルスタックの初期化時にICMPが登録されるようにする)*/
-    if(icmp_init() == -1){
+    if (icmp_init() == -1) {
         errorf("icmp_init() failure");
         return -1;
     }
