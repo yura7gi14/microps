@@ -262,6 +262,11 @@ net_init(void)
         errorf("intr_init() failure");
         return -1;
     }
+    /*ARPの初期化関数を呼び出す*/
+    if(arp_init() == -1){
+        errorf("arp_init() failure");
+        return -1;
+    }
     if (ip_init() == -1) {
         errorf("ip_init() failure");
         return -1;
