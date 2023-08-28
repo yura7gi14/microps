@@ -9,6 +9,7 @@
 
 #include "util.h"
 #include "net.h"
+#include "arp.h"
 #include "ip.h"
 
 struct ip_hdr {
@@ -86,21 +87,21 @@ ip_dump(const uint8_t *data, size_t len)
     v = (hdr->vhl & 0xf0) >> 4;
     hl = hdr->vhl & 0x0f;
     hlen = hl << 2;
-    fprintf(stderr, "    vhl: 0x%02x [v: %u, hl: %u (%u)]\n", hdr->vhl, v, hl, hlen);
-    fprintf(stderr, "    tos: 0x%02x\n", hdr->tos);
+    fprintf(stderr, "        vhl: 0x%02x [v: %u, hl: %u (%u)]\n", hdr->vhl, v, hl, hlen);
+    fprintf(stderr, "        tos: 0x%02x\n", hdr->tos);
     total = ntoh16(hdr->total);
-    fprintf(stderr, "    total: %u (payload: %u)\n", total, total - hlen);
-    fprintf(stderr, "    id: %u\n", ntoh16(hdr->id));
+    fprintf(stderr, "      total: %u (payload: %u)\n", total, total - hlen);
+    fprintf(stderr, "         id: %u\n", ntoh16(hdr->id));
     offset = ntoh16(hdr->offset);
-    fprintf(stderr, "    offset: 0x%04x [flags=%x, offset=%u]\n", offset, (offset & 0xe000) >> 13, offset & 0x1fff);
-    fprintf(stderr, "    ttl: %u\n", hdr->ttl);
-    fprintf(stderr, "    protocol: %u\n", hdr->protocol);
-    fprintf(stderr, "    sum: 0x%04x\n", ntoh16(hdr->sum));
-    fprintf(stderr, "    src: %s\n", ip_addr_ntop(hdr->src, addr, sizeof(addr)));
-    fprintf(stderr, "    dst: %s\n", ip_addr_ntop(hdr->dst, addr, sizeof(addr)));
-    #ifdef HEXDUMP
+    fprintf(stderr, "     offset: 0x%04x [flags=%x, offset=%u]\n", offset, (offset & 0xe000) >> 13, offset & 0x1fff);
+    fprintf(stderr, "        ttl: %u\n", hdr->ttl);
+    fprintf(stderr, "   protocol: %u\n", hdr->protocol);
+    fprintf(stderr, "        sum: 0x%04x\n", ntoh16(hdr->sum));
+    fprintf(stderr, "        src: %s\n", ip_addr_ntop(hdr->src, addr, sizeof(addr)));
+    fprintf(stderr, "        dst: %s\n", ip_addr_ntop(hdr->dst, addr, sizeof(addr)));
+#ifdef HEXDUMP
     hexdump(stderr, data, len);
-    #endif
+#endif
     funlockfile(stderr);
 }
 
@@ -141,7 +142,6 @@ ip_iface_register(struct net_device *dev, struct ip_iface *iface)
         errorf("net_device_add_iface() failure");
         return -1;
     }
-
     iface->next = ifaces;
     ifaces = iface;
     infof("registered: dev=%s, unicast=%s, netmask=%s, broadcast=%s", dev->name,
@@ -154,7 +154,6 @@ ip_iface_register(struct net_device *dev, struct ip_iface *iface)
 struct ip_iface *
 ip_iface_select(ip_addr_t addr)
 {
-    /*IPインタフェースの検索*/
     struct ip_iface *entry;
 
     for (entry = ifaces; entry; entry = entry->next) {
@@ -171,23 +170,12 @@ ip_protocol_register(uint8_t type, void (*handler)(const uint8_t *data, size_t l
 {
     struct ip_protocol *entry;
 
-    /*重複登録の確認
-    ・プロトコルリスト(protocols)を巡回
-        ・指定されたtypeのエントリがすでに存在する場合はエラーを返す
-    */
     for (entry = protocols; entry; entry = entry->next) {
         if (entry->type == type) {
-            errorf("already registered, type=%u", type);
+            errorf("already exists, type=%u", type);
             return -1;
         }
     }
-
-   /*プロトコルの登録
-   1.新しいプロトコルのエントリ用にメモリを確保
-   　・メモリ確保に失敗したらエラーを返す
-   2.新しいプロトコルのエントリに値を設定
-   3.プロトコルリスト(protocols)の先頭に挿入
-   */
     entry = memory_alloc(sizeof(*entry));
     if (!entry) {
         errorf("memory_alloc() failure");
@@ -197,10 +185,8 @@ ip_protocol_register(uint8_t type, void (*handler)(const uint8_t *data, size_t l
     entry->handler = handler;
     entry->next = protocols;
     protocols = entry;
-    
-
-  infof("registered, type=%u", entry->type);
-  return 0;
+    infof("registered, type=%u", entry->type);
+    return 0;
 }
 
 static void
@@ -213,40 +199,35 @@ ip_input(const uint8_t *data, size_t len, struct net_device *dev)
     char addr[IP_ADDR_STR_LEN];
     struct ip_protocol *proto;
 
-    if(len < IP_HDR_SIZE_MIN){
+    if (len < IP_HDR_SIZE_MIN) {
         errorf("too short");
         return;
     }
     hdr = (struct ip_hdr *)data;
-
-    /*IPデータグラムの検証*/
     v = hdr->vhl >> 4;
-    if(v != IP_VERSION_IPV4){
-        errorf("ip version error: v = %u", v);
+    if (v != IP_VERSION_IPV4) {
+        errorf("ip version error: v=%u", v);
         return;
     }
     hlen = (hdr->vhl & 0x0f) << 2;
-    if(len < hlen){
+    if (len < hlen) {
         errorf("header length error: len=%zu < hlen=%u", len, hlen);
         return;
     }
     total = ntoh16(hdr->total);
-    if(len < total){
+    if (len < total) {
         errorf("total length error: len=%zu < total=%u", len, total);
         return;
     }
-    if(cksum16((uint16_t *)hdr, hlen, 0)!=0){
+    if (cksum16((uint16_t *)hdr, hlen, 0) != 0) {
         errorf("checksum error: sum=0x%04x, verify=0x%04x", ntoh16(hdr->sum), ntoh16(cksum16((uint16_t *)hdr, hlen, -hdr->sum)));
         return;
     }
-
     offset = ntoh16(hdr->offset);
-    if(offset & 0x2000){
+    if (offset & 0x2000 || offset & 0x1fff) {
         errorf("fragments does not support");
         return;
     }
-
-    /*IPデータグラムのフィルタリング*/
     iface = (struct ip_iface *)net_device_get_iface(dev, NET_IFACE_FAMILY_IP);
     if (!iface) {
         /* iface is not registered to the device */
@@ -258,38 +239,32 @@ ip_input(const uint8_t *data, size_t len, struct net_device *dev)
             return;
         }
     }
-
     debugf("dev=%s, iface=%s, protocol=%u, total=%u",
         dev->name, ip_addr_ntop(iface->unicast, addr, sizeof(addr)), hdr->protocol, total);
     ip_dump(data, total);
-
-    /*プロトコルの検索
-    ・プロトコルリスト(protocols)を巡回
-        ・IPヘッダのプロトコル番号を一致するプロトコルの入力関数を呼び出す(入力関数にはIPデータグラムのペイロードを渡す)
-        ・入力関数から戻ったらreturnする
-    ・合致するプロトコルが見つからない場合は何もしない
-    */
-    for(proto = protocols; proto; proto = proto->next){
-        if(proto->type == hdr->protocol){
+    for (proto = protocols; proto; proto = proto->next) {
+        if (proto->type == hdr->protocol) {
             proto->handler((uint8_t *)hdr + hlen, total - hlen, hdr->src, hdr->dst, iface);
             return;
         }
     }
-
-   /*unsupported protocol*/
+    /* unsupported protocol */
 }
 
 static int
 ip_output_device(struct ip_iface *iface, const uint8_t *data, size_t len, ip_addr_t dst)
 {
-   uint8_t hwaddr[NET_DEVICE_ADDR_LEN] = {};
+    uint8_t hwaddr[NET_DEVICE_ADDR_LEN] = {};
+    int ret;
 
     if (NET_IFACE(iface)->dev->flags & NET_DEVICE_FLAG_NEED_ARP) {
         if (dst == iface->broadcast || dst == IP_ADDR_BROADCAST) {
             memcpy(hwaddr, NET_IFACE(iface)->dev->broadcast, NET_IFACE(iface)->dev->alen);
         } else {
-            errorf("arp does not implement");
-            return -1;
+            ret = arp_resolve(NET_IFACE(iface), dst, hwaddr);
+            if (ret != ARP_RESOLVE_FOUND) {
+                return ret;
+            }
         }
     }
     return net_device_output(NET_IFACE(iface)->dev, NET_PROTOCOL_TYPE_IP, data, len, hwaddr);
@@ -340,7 +315,7 @@ ip_generate_id(void)
 ssize_t
 ip_output(uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst)
 {
-     struct ip_iface *iface;
+    struct ip_iface *iface;
     char addr[IP_ADDR_STR_LEN];
     uint16_t id;
 
