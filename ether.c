@@ -60,12 +60,12 @@ ether_dump(const uint8_t *frame, size_t flen)
 
     hdr = (struct ether_hdr *)frame;
     flockfile(stderr);
-    fprintf(stderr, "    src: %s\n", ether_addr_ntop(hdr->src, addr, sizeof(addr)));
-    fprintf(stderr, "    dst: %s\n", ether_addr_ntop(hdr->dst, addr, sizeof(addr)));
-    fprintf(stderr, "    type: 0x%04x\n", ntoh16(hdr->type));
-    #ifdef HEXDUMP
+    fprintf(stderr, "        src: %s\n", ether_addr_ntop(hdr->src, addr, sizeof(addr)));
+    fprintf(stderr, "        dst: %s\n", ether_addr_ntop(hdr->dst, addr, sizeof(addr)));
+    fprintf(stderr, "       type: 0x%04x\n", ntoh16(hdr->type));
+#ifdef HEXDUMP
     hexdump(stderr, frame, flen);
-    #endif
+#endif
     funlockfile(stderr);
 }
 
@@ -77,11 +77,11 @@ ether_transmit_helper(struct net_device *dev, uint16_t type, const uint8_t *data
     size_t flen, pad = 0;
 
     hdr = (struct ether_hdr *)frame;
-    memcpy(hdr->src, dst, ETHER_ADDR_LEN);
-    memcpy(hdr->dst, dev->addr, ETHER_ADDR_LEN);
+    memcpy(hdr->dst, dst, ETHER_ADDR_LEN);
+    memcpy(hdr->src, dev->addr, ETHER_ADDR_LEN);
     hdr->type = hton16(type);
-    memcpy(hdr + 1, data, len);
-    if(len < ETHER_PAYLOAD_SIZE_MIN){
+    memcpy(hdr+1, data, len);
+    if (len < ETHER_PAYLOAD_SIZE_MIN) {
         pad = ETHER_PAYLOAD_SIZE_MIN - len;
     }
     flen = sizeof(*hdr) + len + pad;
@@ -99,14 +99,14 @@ ether_input_helper(struct net_device *dev, ether_input_func_t callback)
     uint16_t type;
 
     flen = callback(dev, frame, sizeof(frame));
-    if(flen < (ssize_t)sizeof(*hdr)){
+    if (flen < (ssize_t)sizeof(*hdr)) {
         errorf("too short");
         return -1;
     }
     hdr = (struct ether_hdr *)frame;
-    if(memcmp(dev->addr, hdr->dst, ETHER_ADDR_LEN) != 0){
-        if(memcmp(ETHER_ADDR_BROADCAST, hdr->dst, ETHER_ADDR_LEN) != 0){
-            /*for other host*/
+    if (memcmp(dev->addr, hdr->dst, ETHER_ADDR_LEN) != 0) {
+        if (memcmp(ETHER_ADDR_BROADCAST, hdr->dst, ETHER_ADDR_LEN) != 0) {
+            /* for other host */
             return -1;
         }
     }
@@ -123,5 +123,6 @@ ether_setup_helper(struct net_device *dev)
     dev->mtu = ETHER_PAYLOAD_SIZE_MAX;
     dev->flags = (NET_DEVICE_FLAG_BROADCAST | NET_DEVICE_FLAG_NEED_ARP);
     dev->hlen = ETHER_HDR_SIZE;
+    dev->alen = ETHER_ADDR_LEN;
     memcpy(dev->broadcast, ETHER_ADDR_BROADCAST, ETHER_ADDR_LEN);
 }
