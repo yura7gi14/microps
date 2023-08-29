@@ -18,6 +18,7 @@ on_signal(int s)
     terminate = 1;
 }
 
+
 int
 main(int argc, char *argv[])
 {

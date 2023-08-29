@@ -38,3 +38,4 @@ $(TESTS): %.exe : %.o $(OBJS) $(DRIVERS) test/test.h
 
 clean:
 	rm -rf $(APPS) $(APPS:.exe=.o) $(OBJS) $(DRIVERS) $(TESTS) $(TESTS:.exe=.o)
+
