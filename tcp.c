@@ -118,15 +118,15 @@ tcp_dump(const uint8_t *data, size_t len)
     fprintf(stderr, "        dst: %u\n", ntoh16(hdr->dst));
     fprintf(stderr, "        seq: %u\n", ntoh32(hdr->seq));
     fprintf(stderr, "        ack: %u\n", ntoh32(hdr->ack));
-    fprintf(stderr, "        off: 0x%02x (%d)\n", hdr->off, (hdr->off >> 4) << 2);
-    fprintf(stderr, "        flg: 0x%02x (%s)\n", hdr->flg, tcp_flg_ntoa(hdr->flg));
+    fprintf(stderr, "       off: 0x%02x (%d)\n", hdr->off, (hdr->off >> 4) << 2);
+    fprintf(stderr, "       flg: 0x%02x (%s)\n", hdr->flg, tcp_flg_ntoa(hdr->flg));
     fprintf(stderr, "        wnd: %u\n", ntoh16(hdr->wnd));
     fprintf(stderr, "        sum: 0x%04x\n", ntoh16(hdr->sum));
     fprintf(stderr, "         up: %u\n", ntoh16(hdr->up));
-#ifdef HEXDUMP
+    #ifdef HEXDUMP
     hexdump(stderr, data, len);
-#endif
-    funlockfile(stderr);
+    #endif
+    funlockfile(stderr);  
 }
 
 /*
@@ -163,7 +163,7 @@ tcp_pcb_release(struct tcp_pcb *pcb)
     debugf("released, local=%s, foreign=%s",
         ip_endpoint_ntop(&pcb->local, ep1, sizeof(ep1)),
         ip_endpoint_ntop(&pcb->foreign, ep2, sizeof(ep2)));
-    memset(pcb, 0, sizeof(*pcb)); /* pcb->state is set to TCP_PCB_STATE_FREE (0) */
+    memset(pcb, 0, sizeof(*pcb)); 
 }
 
 static struct tcp_pcb *
@@ -224,6 +224,8 @@ tcp_output_segment(uint32_t seq, uint32_t ack, uint8_t flg, uint16_t wnd, uint8_
     char ep2[IP_ENDPOINT_STR_LEN];
 
     hdr = (struct tcp_hdr *)buf;
+
+    /*TCPセグメントの生成*/
     hdr->src = local->port;
     hdr->dst = foreign->port;
     hdr->seq = hton32(seq);
@@ -242,14 +244,18 @@ tcp_output_segment(uint32_t seq, uint32_t ack, uint8_t flg, uint16_t wnd, uint8_
     pseudo.len = hton16(total);
     psum = ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
     hdr->sum = cksum16((uint16_t *)hdr, total, psum);
-    debugf("%s => %s, len=%zu (payload=%zu)",
+
+    debugf("%s => %s, len=%zu (payload=%zu)", 
         ip_endpoint_ntop(local, ep1, sizeof(ep1)),
         ip_endpoint_ntop(foreign, ep2, sizeof(ep2)),
         total, len);
     tcp_dump((uint8_t *)hdr, total);
+
+    /*IPの送信関数を呼び出す*/
     if (ip_output(IP_PROTOCOL_TCP, (uint8_t *)hdr, total, local->addr, foreign->addr) == -1) {
         return -1;
     }
+
     return len;
 }
 
@@ -289,6 +295,7 @@ tcp_segment_arrives(struct tcp_segment_info *seg, uint8_t flags, uint8_t *data, 
     /* TODO: implemented in the next step */
 }
 
+
 static void
 tcp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct ip_iface *iface)
 {
@@ -306,7 +313,11 @@ tcp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct 
         return;
     }
     hdr = (struct tcp_hdr *)data;
-    pseudo.src = src;
+
+    /*チェックサムの検証
+    ・UDPと同様に疑似ヘッダを含めて計算する
+    */
+   pseudo.src = src;
     pseudo.dst = dst;
     pseudo.zero = 0;
     pseudo.protocol = IP_PROTOCOL_TCP;
@@ -316,12 +327,17 @@ tcp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct 
         errorf("checksum error: sum=0x%04x, verify=0x%04x", ntoh16(hdr->sum), ntoh16(cksum16((uint16_t *)hdr, len, -hdr->sum + psum)));
         return;
     }
-    if (src == IP_ADDR_BROADCAST || src == iface->broadcast || dst == IP_ADDR_BROADCAST || dst == iface->broadcast) {
+
+   /*アドレスのチェック
+   ・送信元または宛先どちらかのアドレスがブロードキャストアドレスだった場合にはエラーメッセージを出力して中断
+   */
+  if (src == IP_ADDR_BROADCAST || src == iface->broadcast || dst == IP_ADDR_BROADCAST || dst == iface->broadcast) {
         errorf("only supports unicast, src=%s, dst=%s",
             ip_addr_ntop(src, addr1, sizeof(addr1)), ip_addr_ntop(dst, addr2, sizeof(addr2)));
         return;
     }
-    debugf("%s:%d => %s:%d, len=%zu (payload=%zu)",
+
+    debugf("%s:%d => %s:%d, len=%zu (payload=%zu)", 
         ip_addr_ntop(src, addr1, sizeof(addr1)), ntoh16(hdr->src),
         ip_addr_ntop(dst, addr2, sizeof(addr2)), ntoh16(hdr->dst),
         len, len - sizeof(*hdr));
@@ -351,6 +367,7 @@ tcp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct 
 int
 tcp_init(void)
 {
+    /*IPの上位プロトコルとしてTCPを登録する*/
     if (ip_protocol_register(IP_PROTOCOL_TCP, tcp_input) == -1) {
         errorf("ip_protocol_register() failure");
         return -1;
